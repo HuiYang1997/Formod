@@ -1,0 +1,7 @@
+(implies 1 2)
+(implies 2 (some 01 2))
+(implies 2 4)
+(implies 3 5)
+(implies 1 (some 01 2))
+(implies 2 (some 01 3))
+(implies 5 (some 01 2))

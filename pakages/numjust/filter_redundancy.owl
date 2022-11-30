@@ -1,0 +1,7 @@
+Prefix(rdfs:=<http://www.w3.org/test#>)
+
+Ontology(
+SubClassOf(<1> <2>)
+EquivalentClasses(<1> ObjectSomeValuesFrom(<r1> <3>))
+EquivalentClasses(<2> ObjectSomeValuesFrom(<r1> <owl:Thing>))
+)

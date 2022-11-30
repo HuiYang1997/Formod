@@ -1,0 +1,12 @@
+Ontology(
+Declaration(Class(<1>))
+Declaration(Class(<2>))
+Declaration(Class(<3>))
+Declaration(Class(<4>))
+Declaration(Class(<5>))
+SubClassOf(<1> <2>)
+SubClassOf(<2> <4>)
+SubClassOf(<3> <5>)
+)
+
+# Hash code: 51a4c4f1
