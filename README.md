@@ -25,10 +25,10 @@ We use the resolution algorithnm provided by the following link:
 >https://github.com/liveontologies/pinpointing-experiments
 
 We build a docker image, use it by following steps:
-1. Import the docker image by ``docker import - resolution:latest < resolution.tar``
+1. Dowenload the docker image by ``docker pull yh1997/resolution``
 2. Check the ID of docker image by ``docker images``
 3. Run the image ``docker run -it ID_of_dokcer_image /bin/bash``
-3. Go to the path "/pinpointing-experiments" by runing the command
+4. Go to the path "/pinpointing-experiments" by runing the command
 ``cd pinpointing-experiments``
-3. Put all generated file of Horn clauses into a singular folder, such as "query", assume the name of all the Horn-clause-files are list in a text file, such as "queries". Then, by running the following command, you will get the statistic results of resulting pseudo-modules in the file "record.csv".
+5. Put all generated file of Horn clauses into a singular folder, such as "query", assume the name of all the Horn-clause-files are list in a text file, such as "queries". Then, by running the following command, you will get the statistic results of resulting pseudo-modules in the file "record.csv".
 ``./bin/run_justification_experiments.sh  -t 60000 record.csv queries  org.liveontologies.pinpointing.experiments.SatResolutionJustificationExperiment  -- query THRESHOLD``
