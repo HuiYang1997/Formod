@@ -24,11 +24,10 @@ Note that here the algorithm only produced the clause set $\mathcal{C}_\Sigma$. 
 We use the resolution algorithnm provided by the following link:
 >https://github.com/liveontologies/pinpointing-experiments
 
-We build a docker imgine:
-1. Import the docker imagine by ``docker import resolution.tar``
-2. Check the ID of docker imgine by ``docker ps -a``
-2. Run the docker imgaine by the command:
-``docker exec -it ID_of_dokcer_imgine /bin/bash``
+We build a docker image:
+1. Import the docker image by ``docker import - resolution:latest < resolution.tar``
+2. Check the ID of docker image by ``docker images``
+3. Run the image ``docker run -it ID_of_dokcer_image /bin/bash``
 3. Go to the path "/pinpointing-experiments" by runing the command
 ``cd pinpointing-experiments``
 3. Put all generated file of Horn clauses into a singular folder, such as "query", assume the name of all the Horn-clause-files are list in a text file, such as "queries". Then, by running the following command, you will get the statistic results of resulting pseudo-modules in the file "record.csv".
