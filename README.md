@@ -24,7 +24,7 @@ Note that here the algorithm only produced the clause set $\mathcal{C}_\Sigma$. 
 We use the resolution algorithnm provided by the following link:
 >https://github.com/liveontologies/pinpointing-experiments
 
-We build a docker image:
+We build a docker image, use it by following steps:
 1. Import the docker image by ``docker import - resolution:latest < resolution.tar``
 2. Check the ID of docker image by ``docker images``
 3. Run the image ``docker run -it ID_of_dokcer_image /bin/bash``
