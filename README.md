@@ -25,7 +25,7 @@ We use the resolution algorithnm provided by the following link:
 >https://github.com/liveontologies/pinpointing-experiments
 
 We build a docker image, use it by following steps:
-1. Dowenload the docker image by ``docker pull yh1997/resolution``
+1. Download the docker image by ``docker pull yh1997/resolution``
 2. Check the ID of docker image by ``docker images``
 3. Run the image ``docker run -it ID_of_dokcer_image /bin/bash``
 4. Go to the path "/pinpointing-experiments" by runing the command
