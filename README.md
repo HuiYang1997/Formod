@@ -2,6 +2,7 @@
 
 This is a protype algorithm of the algorithm ForMod.
 
+## Step 1: generate the Horn clauses
 To use this code, put the ontology on dictionary "workspace". For example, assume the ontology is "test.owl".
 We require that:
 
@@ -16,9 +17,19 @@ Then one can obtain the clauses set for each signature in "workspace/test/sig" b
 
 The result is saved in "workspace/test/query_sig".
 
-Note that here the algorithm only produced the clause set $\mathcal{C}_\Sigma$. To obtain the pseduo-minimal modules, one could use the resolution algorithm which can be found in the following link:
+
+Note that here the algorithm only produced the clause set $\mathcal{C}_\Sigma$. To obtain the pseduo-minimal modules, one could use the resolution algorithm in the next step.
+
+## Step 2: resolution over Horn clauses
+We use the resolution algorithnm provided by the following link:
 >https://github.com/liveontologies/pinpointing-experiments
 
-To do that, one can 
-1. follow the instruction in: https://github.com/liveontologies/pinpointing-experiments/wiki;
-2. change the path in line 60-64 the file "SatProofProvider.java" in the link: https://github.com/liveontologies/pinpointing-experiments/tree/master/src/main/java/org/liveontologies/proofs
+We build a docker imgine:
+1. Import the docker imagine by ``docker import resolution.tar``
+2. Check the ID of docker imgine by ``docker ps -a``
+2. Run the docker imgaine by the command:
+``docker exec -it ID_of_dokcer_imgine /bin/bash``
+3. Go to the path "/pinpointing-experiments" by runing the command
+``cd pinpointing-experiments``
+3. Put all generated file of Horn clauses into a singular folder, such as "query", assume the name of all the Horn-clause-files are list in a text file, such as "queries". Then, by running the following command, you will get the statistic results of resulting pseudo-modules in the file "record.csv".
+``./bin/run_justification_experiments.sh  -t 60000 record.csv queries  org.liveontologies.pinpointing.experiments.SatResolutionJustificationExperiment  -- query THRESHOLD``
