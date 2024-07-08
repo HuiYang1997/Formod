@@ -794,13 +794,17 @@ class dominant_ini(trace_inference):
         with open(f"{query_file}/encoding.q", 'w') as f_q:
             f_q.write(str('1') + '\n')
 
+        print("______________Complete Module_____________")
         with open(f'{query_file}/approximate_module.owl', 'w') as f_o:
-            f_o.write(f"Prefix(owl:=<http://www.w3.org/2002/07/owl#>)\n\nOntology(\n")
+            # f_o.write(f"Prefix(owl:=<http://www.w3.org/2002/07/owl#>)\n\nOntology(\n")
             for axiom in self.ontology.axioms:
                 ind_a = self.ontology.axioms[axiom]
                 if ind_a in self.rules2id and str(self.rules2id[ind_a]) in self.answer_literals:
-                    f_o.write(trans_back(axiom) + '\n')
-            f_o.write(')\n')
+                    line = str(self.rules2id[ind_a]) + ": "+ trans_back(axiom) 
+                    f_o.write(line+ "\n")
+                    print(line)
+            # f_o.write(')\n')
+        print("___________________________________________")
 
     def record_subH(self):
         # extract hyper-paths to a node in sig_c or a middle node
