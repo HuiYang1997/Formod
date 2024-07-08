@@ -795,7 +795,7 @@ class dominant_ini(trace_inference):
             f_q.write(str('1') + '\n')
 
         print("______________Complete Module_____________")
-        with open(f'{query_file}/approximate_module.owl', 'w') as f_o:
+        with open(f'{query_file}/approximate_module.txt', 'w') as f_o:
             # f_o.write(f"Prefix(owl:=<http://www.w3.org/2002/07/owl#>)\n\nOntology(\n")
             for axiom in self.ontology.axioms:
                 ind_a = self.ontology.axioms[axiom]
