@@ -11,10 +11,10 @@ We require that:
 
 This preprocessing could be done by runing the following command:
 ``python ont_processing.py <ontology_path> [do_transform]``
-where do_transform = True/False. if do_transform == True, all Abox axioms will be translated to Tbox axioms as follows:
+where do_transform = True/False. if do_transform == True, all Abox axioms will be translated to Tbox axioms as follows (the translation is saved in the file: "ontology_mappings.pkl"):
 - 'A(a)' to 'A_a\sqsubseteq A'
 -  'r(a,b)' to 'A_a\sqsubseteq  \exists r. A_b'
-The translation is saved in the file: "ontology_mappings.pkl"
+
 
 ## Step 1: generate the Horn clauses
 We assume all signatures has been provided as follows:
