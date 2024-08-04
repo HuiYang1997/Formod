@@ -2,14 +2,25 @@
 
 This is a protype algorithm of the algorithm ForMod.
 
-## Step 1: generate the Horn clauses
+## Step 0: preprocessing
 To use this code, put the ontology on dictionary "workspace". For example, assume the ontology is "test.owl".
 We require that:
 
 1. "test.owl" is of fss format, and there is a copy "test.krss.owl" of krss format;
 2. there is a classification result of direct subsumptions of "test.owl" save in the path "workspace/test/data_preprocess";
-3. all sigature are in the dictionary "workspace/test/sig", with name 0,1,2,...;
-4. all the signature file consist of two lines: (i)"A B C .... D\n"; (ii)"r1 r2 ... rn\n". Here, A,B, ... are concepts, ri is role.
+
+This preprocessing could be done by runing the following command:
+``python ont_processing.py <ontology_path> [do_transform]``
+where do_transform = True/False. if do_transform == True, all Abox axioms will be translated to Tbox axioms as follows:
+- 'A(a)' to 'A_a\sqsubseteq A'
+-  'r(a,b)' to 'A_a\sqsubseteq  \exists r. A_b'
+The translation is saved in the file: "ontology_mappings.pkl"
+
+## Step 1: generate the Horn clauses
+We assume all signatures has been provided as follows:
+
+1. all sigature are in the dictionary "workspace/test/sig", with name 0,1,2,...;
+2. all the signature file consist of two lines: (i)"A B C .... D\n"; (ii)"r1 r2 ... rn\n". Here, A,B, ... are concepts, ri is role.
 
 Then one can obtain the clauses set for each signature in "workspace/test/sig" by running:
 
