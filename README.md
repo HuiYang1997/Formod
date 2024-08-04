@@ -9,8 +9,14 @@ We require that:
 1. "test.owl" is of fss format, and there is a copy "test.krss.owl" of krss format;
 2. there is a classification result of direct subsumptions of "test.owl" save in the path "workspace/test/data_preprocess";
 
-This preprocessing could be done by runing the following command:
+This preprocessing could be done as follows. First, install the mOWL package by:
+
+``pip install mowl-borg``
+
+Then, run the following command:
+
 ``python ont_processing.py <ontology_path> [do_transform]``
+
 where do_transform = True/False. if do_transform == True, all Abox axioms will be translated to Tbox axioms as follows (the translation is saved in the file: "ontology_mappings.pkl"):
 - 'A(a)' to 'A_a\sqsubseteq A'
 -  'r(a,b)' to 'A_a\sqsubseteq  \exists r. A_b'
