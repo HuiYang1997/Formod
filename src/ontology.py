@@ -60,15 +60,43 @@ class Ontology:
                 self.renew(line)
 
     def index_concepts_and_relation(self, line):
-        if '(' not in line or '<' not in line or 'Assertion(' in line:
+        if '(' not in line or 'Assertion(' in line:
             return
 
         if line[:11] == 'Declaration':  # Declaration()
             if line[11:13] == '(C':  # Class
-                self.concepts[line.split('<', 1)[1][:-4]] = self.ind_concepts
+                # Support both formats: Declaration(Class(<...>)) and Declaration(Class(:...))
+                if '<' in line:
+                    # Original format with angle brackets
+                    concept_name = line.split('<', 1)[1][:-4]
+                elif ':' in line and 'Class(' in line:
+                    # New format with colon: Declaration(Class(:ConceptName))
+                    import re
+                    match = re.search(r'Declaration\(Class\(:([^)]+)\)\)', line)
+                    if match:
+                        concept_name = f"http://www.co-ode.org/ontologies/galen#{match.group(1)}"
+                    else:
+                        return
+                else:
+                    return
+                self.concepts[concept_name] = self.ind_concepts
                 self.ind_concepts += 1
             elif line[11:13] == '(O':  # Object
-                self.relations[line.split('<', 1)[1][:-4]] = self.ind_relations
+                # Support both formats: Declaration(ObjectProperty(<...>)) and Declaration(ObjectProperty(:...))
+                if '<' in line:
+                    # Original format with angle brackets
+                    relation_name = line.split('<', 1)[1][:-4]
+                elif ':' in line and 'ObjectProperty(' in line:
+                    # New format with colon: Declaration(ObjectProperty(:PropertyName))
+                    import re
+                    match = re.search(r'Declaration\(ObjectProperty\(:([^)]+)\)\)', line)
+                    if match:
+                        relation_name = f"http://www.co-ode.org/ontologies/galen#{match.group(1)}"
+                    else:
+                        return
+                else:
+                    return
+                self.relations[relation_name] = self.ind_relations
                 self.ind_relations += 1
 
     def axiom_ind_form(self, a):

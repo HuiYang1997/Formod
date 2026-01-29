@@ -215,6 +215,10 @@ class cluster:
         else:
             concepts = []
             for r in self.A2L[k]:
+                if not r_res and r.startswith("-"):
+                    # ignore the case where roles of form -r1...-rn+t 
+                    # is not appear in the first edge for EL+ case.
+                    continue
                 if not r_res or r == r_res:
                     if r == '':
                         concepts += [f'<{B}>' for B in self.A2L[k][r]]

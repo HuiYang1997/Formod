@@ -475,3 +475,219 @@ def split_two_part(axiom, type='sort'):
             return False, tuple(sorted(first_part)), (last_term,)
         else:
             return False, first_part, (last_term,)
+
+
+def replace_el_plus_role_pattern(concept_str):
+    """
+    Replace EL+ role patterns in a concept string (n>=1):
+    1. if input string is of the form "(some <-r1-r2...-rn+t> C1)", replace it with "(some <t> C1) and (some <r1> (some <r2> (... (some <rn> X)...)))", where X is a place-holder
+    2. if input string is of the form "(some <-r1-r2...-rn> C1)", replace it with "(some <r1> (some <r2> (... (some <rn> C1)...)))"
+    3. if input string is of the form  "(some <+t> C1)", replace it with (some <t> C1)
+    4. else, let C1 be the input string
+
+
+    Note that, all the replacement above is recursively done. That is, we will do it again for C1, there are two cases:
+    a. if C1 is of the form (some <xxx> C2), then repeat the process above to C1;
+    b. if C1 is of the form (and C2 ... Cn), then repeat the process above for each C2, ... Cn.
+    
+    Attention: 
+    (i) Case 1 could only happen in the first time. the following steps only meet case 3, 4 (raise error if not)
+    (ii) Once the case 2 happened, the following steps should only be case 2 or 4 (raise error if not)
+
+    Parameters
+    ----------
+    concept_str : str
+        The concept string to process
+        
+    Returns
+    -------
+    str1: The processed concept string with EL+ patterns replaced
+    str2: return the string containing place-holder X for case 1, return empty string for other cases.
+    """
+    
+    def parse_concept(s, pos=0):
+        """
+        Parse a concept expression starting at position pos.
+        Returns (concept_string, end_position).
+        Handles: <atomic>, (some <role> C), (and C1 C2 ... Cn)
+        """
+        s = s.strip()
+        if pos >= len(s):
+            return "", pos
+        
+        # Skip whitespace
+        while pos < len(s) and s[pos] == ' ':
+            pos += 1
+        
+        if pos >= len(s):
+            return "", pos
+        
+        if s[pos] == '<':
+            # Atomic concept <name>
+            end = s.find('>', pos)
+            if end == -1:
+                return s[pos:], len(s)
+            return s[pos:end+1], end + 1
+        elif s[pos] == '(':
+            # Complex expression - find matching closing paren
+            paren_count = 1
+            start = pos
+            pos += 1
+            while pos < len(s) and paren_count > 0:
+                if s[pos] == '(':
+                    paren_count += 1
+                elif s[pos] == ')':
+                    paren_count -= 1
+                pos += 1
+            return s[start:pos], pos
+        else:
+            # Unknown format, read until space or end
+            end = pos
+            while end < len(s) and s[end] not in ' ()':
+                end += 1
+            return s[pos:end], end
+    
+    def parse_and_conjuncts(and_content):
+        """
+        Parse the content inside (and ...) to extract individual conjuncts.
+        Returns list of conjunct strings.
+        """
+        # and_content is the part after "(and " and before final ")"
+        conjuncts = []
+        pos = 0
+        while pos < len(and_content):
+            while pos < len(and_content) and and_content[pos] == ' ':
+                pos += 1
+            if pos >= len(and_content):
+                break
+            concept, new_pos = parse_concept(and_content, pos)
+            if concept:
+                conjuncts.append(concept)
+            pos = new_pos
+        return conjuncts
+    
+    def process_recursive(expr, mode='initial'):
+        """
+        Process expression recursively.
+        mode: 'initial' - first call, Case 1 allowed
+              'after_case1' - after Case 1, only Case 3, 4 allowed
+              'after_case2' - after Case 2, only Case 2, 4 allowed
+        
+        Returns: (processed_str, placeholder_str)
+        """
+        expr = expr.strip()
+        
+        # Case 4: atomic concept or non-some expression
+        if not expr.startswith('(some '):
+            # Check if it's (and ...)
+            if expr.startswith('(and '):
+                # Extract content between "(and " and final ")"
+                inner = expr[5:-1]  # remove "(and " and ")"
+                conjuncts = parse_and_conjuncts(inner)
+                processed_conjuncts = []
+                all_placeholders = []
+                for conj in conjuncts:
+                    proc, ph = process_recursive(conj, mode)
+                    processed_conjuncts.append(proc)
+                    if ph:
+                        all_placeholders.append(ph)
+                result = '(and ' + ' '.join(processed_conjuncts) + ')'
+                placeholder = ' '.join(all_placeholders) if all_placeholders else ''
+                return result, placeholder
+            # Not a some or and expression - return as is
+            return expr, ''
+        
+        # Parse (some <role> C1)
+        # Find the role part
+        role_start = expr.find('<')
+        role_end = expr.find('>', role_start)
+        if role_start == -1 or role_end == -1:
+            return expr, ''
+        
+        role = expr[role_start+1:role_end]  # role without < >
+        
+        # Find C1 (the inner concept after the role)
+        c1_start = role_end + 2  # skip "> "
+        c1_end = len(expr) - 1   # exclude final ")"
+        c1 = expr[c1_start:c1_end].strip()
+        
+        # Determine which case we're in based on role pattern
+        has_plus = '+' in role
+        has_minus = role.startswith('-')
+        
+        if has_minus and has_plus:
+            # Case 1: (some <-r1-r2...-rn+t> C1)
+            # Only allowed in initial mode
+            if mode != 'initial':
+                raise ValueError(f"Case 1 pattern found in non-initial mode: {expr}")
+            
+            # Parse: -r1-r2-...-rn+t
+            # Split by '+' first to get chain part and target
+            parts = role.split('+')
+            chain_part = parts[0]  # -r1-r2-...-rn
+            target_role = parts[1]  # t
+            
+            # Extract chain roles (split by '-', skip empty)
+            chain_roles = [r for r in chain_part.split('-') if r]
+            
+            # Process C1 recursively with 'after_case1' mode
+            c1_processed, c1_placeholder = process_recursive(c1, 'after_case1')
+            
+            # Build result: (some <t> C1_processed)
+            main_result = f'(some <{target_role}> {c1_processed})'
+            
+            # Build placeholder: (some <r1> (some <r2> (... (some <rn> X)...)))
+            placeholder = 'X'
+            for r in reversed(chain_roles):
+                placeholder = f'(some <{r}> {placeholder})'
+            
+            return main_result, placeholder
+        
+        elif has_minus and not has_plus:
+            # Case 2: (some <-r1-r2...-rn> C1)
+            if mode == 'after_case1':
+                raise ValueError(f"Case 2 pattern found after Case 1: {expr}")
+            
+            # Extract chain roles
+            chain_roles = [r for r in role.split('-') if r]
+            
+            # Process C1 recursively with 'after_case2' mode
+            c1_processed, _ = process_recursive(c1, 'after_case2')
+            
+            # Build nested some: (some <r1> (some <r2> (... (some <rn> C1_processed)...)))
+            result = c1_processed
+            for r in reversed(chain_roles):
+                result = f'(some <{r}> {result})'
+            
+            return result, ''
+        
+        elif has_plus and not has_minus:
+            # Case 3: (some <+t> C1)
+            if mode == 'after_case2':
+                raise ValueError(f"Case 3 pattern found after Case 2: {expr}")
+            
+            # Remove the leading +
+            actual_role = role[1:]  # remove '+'
+            
+            # Process C1 recursively (keep same mode)
+            c1_processed, c1_placeholder = process_recursive(c1, mode)
+            
+            result = f'(some <{actual_role}> {c1_processed})'
+            return result, c1_placeholder
+        
+        else:
+            # Case 4: regular (some <role> C1) - no special pattern
+            # Process C1 recursively (keep same mode)
+            c1_processed, c1_placeholder = process_recursive(c1, mode)
+            result = f'(some <{role}> {c1_processed})'
+            return result, c1_placeholder
+    
+    result, placeholder = process_recursive(concept_str)
+    
+    print("-------------replacement--------------")
+    print(f"old: {concept_str}")
+    print(f"new: {result}")
+    print(f"placeholder: {placeholder}")
+    print("-----------------------------------")
+    
+    return result, placeholder

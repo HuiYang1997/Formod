@@ -13,11 +13,28 @@ Declaration(Class(<4>))
 Declaration(Class(<5>))
 Declaration(ObjectProperty(<01>))
 
+############################
+#   Classes
+############################
+
+# Class: <1> (<1>)
+
 SubClassOf(<1> <2>)
 SubClassOf(<1> ObjectSomeValuesFrom(<01> <2>))
+
+# Class: <2> (<2>)
+
+SubClassOf(<2> <4>)
 SubClassOf(<2> ObjectSomeValuesFrom(<01> <2>))
 SubClassOf(<2> ObjectSomeValuesFrom(<01> <3>))
-SubClassOf(<2> <4>)
+
+# Class: <3> (<3>)
+
 SubClassOf(<3> <5>)
+
+# Class: <5> (<5>)
+
 SubClassOf(<5> ObjectSomeValuesFrom(<01> <2>))
+
+
 )

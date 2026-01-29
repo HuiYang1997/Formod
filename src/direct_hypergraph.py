@@ -253,7 +253,9 @@ class Direct_hyper_graph(DirectedHypergraph):
         #     self.subgraph_sig.forget(n, delete_type)
         self.subgraph_sig.forget(preserve_nodes, delete_type)
 
-        for left_id in self.subgraph_sig.hyperedge_id_iterator():
+        print("preserve_nodes:", preserve_nodes)
+        print("=============left edges============")
+        for left_id in self.subgraph_sig.get_hyperedge_id_set():
             print(left_id, self.subgraph_sig.get_hyperedge_attributes(left_id))
 
         return

@@ -133,6 +133,7 @@ class Direct_graph(DirectedHypergraph):
                         continue
                     else:
                         attributes = self.get_hyperedge_attributes(hyperedge_id)
+                        print(attributes)
                         new_attributes = {k: attributes[k] for k in attributes if k in self.sig_r}
                         if new_attributes:
                             head_node_set = attributes['head']
@@ -208,14 +209,24 @@ class Direct_graph(DirectedHypergraph):
 
     def build_cluster(self, source_node_set):
         self.cluster.sig_c = self.sig_c
+
+        print("=============self.subgraph_sig_h_id2r_and_H_id:=============== ")
+        print(self.subgraph_sig_h_id2r_and_H_id)
+        print(self.sig_r)
+        print(self.sig_c)
+
         for sub_h_id in self.subgraph_sig.get_hyperedge_id_set():
             attribute = self.subgraph_sig.get_hyperedge_attributes(sub_h_id)
             tail = list(attribute['tail'])[0]
             head = list(attribute['head'])[0]
             assert self.subgraph_sig.has_node(tail)
             assert self.subgraph_sig.has_node(head)
+            print(f"edge_id: {sub_h_id}, attribute: {attribute}")
 
             for r in self.subgraph_sig_h_id2r_and_H_id[sub_h_id]:
+                # # skip the case when r is of the form <-r1-r2...-rn+t> with n>=1, but allow <+t>
+                # if r[0] == '-':
+                #     continue
                 self.cluster.add(tail, r, head)
 
             if head in self.subsumptions:
@@ -229,6 +240,7 @@ class Direct_graph(DirectedHypergraph):
                     assert n_sig != n
                     self.cluster.add(n, "", n_sig)
 
-        print(len(self.cluster.A2L))
+        print(self.cluster.A2L)
+        print("source_node_set:", source_node_set)
         self.cluster.main(source_node_set)
         return

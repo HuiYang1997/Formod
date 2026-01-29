@@ -1,0 +1,14 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Workspace datasets
+workspace/*/data/
+workspace/*/data_preprocess/
+workspace/*/query_sig/
+workspace/*/*.owl
+workspace/*/*.txt
+
+# Temporary files
+1

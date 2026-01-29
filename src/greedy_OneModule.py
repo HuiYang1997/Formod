@@ -6,7 +6,7 @@ class greedy_search(object):
         self.history_result = {}
 
     def search(self, node, history=set([])):
-        assert node in self.clauses
+        assert node in self.clauses, f"node {node} not in self.clauses"
         if node in self.history_result:
             return self.history_result[node]
 

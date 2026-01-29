@@ -1,3 +1,4 @@
+import pprint
 from halp.directed_hypergraph import DirectedHypergraph
 from itertools import product
 from multiprocessing import Pool
@@ -123,6 +124,8 @@ class subH(DirectedHypergraph):
         self.nodes2degree = {n: len(self.get_forward_star(n)) * len(self.get_backward_star(n)) for n in
                              self.node_iterator() if n[0] != '(' and n[0] != '<' and n not in preserve_nodes}
 
+        print("**************nodes3degree**************")
+        pprint.pprint(self.nodes2degree)
         # forget all nodes with degree 0
         nodes_to_delete = set()
         for A in self.nodes2degree:

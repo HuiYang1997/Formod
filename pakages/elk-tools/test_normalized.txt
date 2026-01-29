@@ -1,7 +1,0 @@
-(implies <#c0> <#c1>)
-(implies <#c0> (some <#r1> <#c1>))
-(implies <#c1> (some <#r1> <#c1>))
-(implies <#c1> (some <#r1> <#c2>))
-(implies <#c1> <#c3>)
-(implies <#c2> <#c4>)
-(implies <#c4> (some <#r1> <#c1>))
