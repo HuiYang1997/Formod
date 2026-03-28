@@ -2,6 +2,13 @@
 
 This is a prototype implementation of the algorithm ForMod.
 
+## Prerequisites: ontology data
+
+To use this code, put the ontology in the directory `workspace`. For example, assume the ontology is `test.owl`. We require that:
+
+1. `test.owl` is of FSS format, and there is a copy `test.krss.owl` of KRSS format;
+2. there is a classification result of direct subsumptions of `test.owl` saved in the path `workspace/test/data_preprocess`.
+
 ## Step 1: generate the Horn clauses
 
 We assume all signatures have been provided as follows:
