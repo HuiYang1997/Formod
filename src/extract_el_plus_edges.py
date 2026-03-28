@@ -117,11 +117,6 @@ class _RoleChainBuilder:
         self.dic_tr_s = dic_tr_s or {}
         self.inc_axioms = role_inclusion_axioms or {}
         self.chain_axioms = role_chain_axioms or {}
-
-        print('================================')
-        print("role_inclusions", self.role_inclusions)
-        print("dic_tr_s", self.dic_tr_s)
-        print('================================')
         
         # Build reverse lookup: target -> [(source, axiom)] for inclusions
         #                       target -> [((r, s), axiom)] for chains
@@ -241,7 +236,7 @@ class _RoleChainBuilder:
         
         # Start from all roles that have incoming edges (are targets of some axiom)
         targets = set(self.inc_to.keys()) | set(self.chain_to.keys())
-        print("targets", targets)
+        # print("targets", targets)
         # # Also include isolated roles
         # targets |= self.roles
         
@@ -294,12 +289,12 @@ class _RoleChainBuilder:
             # Collect s_chain results  
             s_results = list(self._expand(s, next_len))
             
-            print("===================")
-            print("target", target)
-            print(r_results)
-            print(s_results)
-            print(r, s, max_len, next_len)
-            print("===================")
+            # print("===================")
+            # print("target", target)
+            # print(r_results)
+            # print(s_results)
+            # print(r, s, max_len, next_len)
+            # print("===================")
             
             # Case 1: Both have results
             if r_results and s_results:
@@ -315,7 +310,7 @@ class _RoleChainBuilder:
             # Case 3: Only s has results, r is empty
             elif not r_results and s_results:
                 for s_chain, s_ax in s_results:
-                    print("s_chain", s_chain)
+                    #print("s_chain", s_chain)
                     yield [r] + s_chain[:-1] + [target], s_ax + [axiom]
 
          
@@ -462,10 +457,10 @@ class ELPlusEdgesExtractor:
         # Compute all role chains
         all_chains = self._role_chain_builder.compute(max_length=max_chain_length)
 
-        print("+++++++++++++++")
-        print("all_chains")
-        pprint(all_chains)
-        print("+++++++++++++++")
+        # print("+++++++++++++++")
+        # print("all_chains")
+        # pprint(all_chains)
+        # print("+++++++++++++++")
 
         # Build index: role -> [(tail_node, head_node, edge_id)]
         role_edges = self._build_role_edge_index()
@@ -481,11 +476,11 @@ class ELPlusEdgesExtractor:
             t = chain[-1]
             n = len(roles)
 
-            print("+++++++++++++++")
-            print("chain", chain)
-            print("roles", roles)
-            print("t", t)
-            print("n", n)
+            # print("+++++++++++++++")
+            # print("chain", chain)
+            # print("roles", roles)
+            # print("t", t)
+            # print("n", n)
 
             # Progressive search from k=n down to k=1
             paths = self._find_paths_progressive(roles, t, n, role_edges)
@@ -599,8 +594,8 @@ class ELPlusEdgesExtractor:
                     "first_concept": first_A,
                     "last_concept": last_B,
                 })
-        print("finded paths")
-        pprint(results)
+        # print("finded paths")
+        # pprint(results)
         return results
 
     def aggregate_paths_with_H(self, paths):

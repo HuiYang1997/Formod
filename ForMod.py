@@ -27,6 +27,52 @@ from src.greedy_OneModule import greedy_search
 
 from pprint import pp, pprint
 from collections import defaultdict
+import logging
+import psutil
+import threading
+
+# fix random seed
+random.seed(42)
+
+
+class MemoryMonitor:
+    """Monitor peak memory usage during execution using a background thread."""
+    def __init__(self, interval=0.01):
+        self.interval = interval  # Sampling interval in seconds
+        self.peak_memory = 0
+        self.current_memory = 0
+        self.monitoring = False
+        self.thread = None
+        self.process = psutil.Process()
+    
+    def _monitor(self):
+        """Background thread function to continuously monitor memory."""
+        while self.monitoring:
+            try:
+                self.current_memory = self.process.memory_info().rss / 1024 / 1024  # MB
+                if self.current_memory > self.peak_memory:
+                    self.peak_memory = self.current_memory
+            except:
+                pass
+            time.sleep(self.interval)
+    
+    def start(self):
+        """Start monitoring memory usage."""
+        self.peak_memory = self.process.memory_info().rss / 1024 / 1024  # MB
+        self.monitoring = True
+        self.thread = threading.Thread(target=self._monitor, daemon=True)
+        self.thread.start()
+    
+    def stop(self):
+        """Stop monitoring and return peak memory."""
+        self.monitoring = False
+        if self.thread:
+            self.thread.join(timeout=1.0)
+        # One final check
+        final_memory = self.process.memory_info().rss / 1024 / 1024
+        if final_memory > self.peak_memory:
+            self.peak_memory = final_memory
+        return self.peak_memory
 
 
 def rewrite(C):
@@ -72,8 +118,8 @@ def transfer_t2C(d, n, history=set(), r_restrict=None):
 
 
 class dominant_ini(trace_inference):
-    def __init__(self, name_ontology, path, sig_path='sig', count_c=None, k_E_role=None, el_plus_mode=False):
-        trace_inference.__init__(self, path, name_ontology, count_c, k_E_role)
+    def __init__(self, name_ontology, path, sig_path='sig', initialize=False, el_plus_mode=False, verbose=True):
+        trace_inference.__init__(self, path, name_ontology, initialize)
 
         # basic value
         self.name_ontology = name_ontology
@@ -83,8 +129,24 @@ class dominant_ini(trace_inference):
         self.sig_path = path + sig_path
         self.query_path = path + "query_" + sig_path
         
+        # Store initialize flag for later use
+        self.initialize_mode = initialize
+        
         # EL+ mode flag - when True, enables EL+ specific processing for role chains
         self.el_plus_mode = el_plus_mode
+        
+        # Verbose mode - controls whether to print information
+        self.verbose = verbose
+        
+        # Setup logger
+        self.logger = logging.getLogger(f'ForMod.{name_ontology}')
+        if not self.logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+        self.logger.setLevel(logging.INFO if verbose else logging.WARNING)
+        
         mkdir(self.query_path)
 
         self.time_limit = 120
@@ -120,6 +182,14 @@ class dominant_ini(trace_inference):
         self.middle_nodes = set()
 
         self.infered_role_chains = set([])
+        
+        # Memory and statistics tracking
+        self.memory_init = 0
+        self.memory_per_signature = {}
+        self.num_chains_init = 0
+        self.num_paths_G_init = 0
+        self.num_paths_H_init = 0
+        self.num_infered_chains_per_signature = {}
 
     def clear(self):
         self.clear_trace_data()
@@ -145,10 +215,21 @@ class dominant_ini(trace_inference):
         self.infered_role_chains = set([])    
 
     def initialize(self, start=True, max_chain_length=None):
+        print("Loading data for computing module...")
+        start_time = time.time()
+        # Track memory before initialization
+        process = psutil.Process()
+        mem_before = process.memory_info().rss / 1024 / 1024  # MB
+        
         self.ontology = Ontology(self.name_ontology + '.owl', self.path, True, ind_form=False)
+        
+        # Track memory after ontology loading
+        mem_after_ontology = process.memory_info().rss / 1024 / 1024  # MB
+        
         self.initialize_indexed_and_hyper_edges()
         self.initialize_direct_subsumption(start)
-        print("initial hyper-graph and digraph loaded!")
+        if self.verbose:
+            self.logger.info("initial hyper-graph and digraph loaded!")
 
         # print("===============G.get_hyperedge_id_set() 1================")
         # for id in self.G.get_hyperedge_id_set():
@@ -157,30 +238,41 @@ class dominant_ini(trace_inference):
 
         for n in self.ontology.concepts:
             if not self.ont_H.has_node(n):
-                print('nodes not in ont_H, ', n)
+                if self.verbose:
+                    self.logger.warning(f'nodes not in ont_H: {n}')
 
         for n in self.ontology.relations:
             if not self.ont_H.has_node(n):
-                print('relations not in ont_H, ', n)
+                if self.verbose:
+                    self.logger.warning(f'relations not in ont_H: {n}')
 
         if self.el_plus_mode:
             # Do not apply the optimizations based on terminology concepts for EL+ mode
             self.H.concept_non_terminology = {n for n in self.concept_appear_count}
         else:
             self.H.concept_non_terminology = {n for n in self.concept_appear_count if self.concept_appear_count[n] > 1}
-            print("non terminology concept:", len(self.H.concept_non_terminology))
+            if self.verbose:
+                self.logger.info(f"non terminology concept: {len(self.H.concept_non_terminology)}")
         
         # Initialize EL+ extension only if el_plus_mode is enabled
         # Role axiom check is done inside initialize_el_plus during data loading
         if self.el_plus_mode:
             self.initialize_el_plus(max_chain_length=max_chain_length)
         
+        # Track memory after initialization - use absolute value instead of difference
+        mem_after = process.memory_info().rss / 1024 / 1024  # MB
+        self.memory_init = mem_after  # Store absolute memory usage
+        mem_increase = mem_after - mem_before
+        if self.verbose:
+            self.logger.info(f"Initialization memory: {self.memory_init:.2f} MB (increase: {mem_increase:.2f} MB)")
+        
         # print("===============G.get_hyperedge_id_set() 2================")
         # for id in self.G.get_hyperedge_id_set():
         #     print(id, self.G.get_hyperedge_attributes(id))
         # print("=======================================================")    
+        print("all data loaded in {}".format(time.time() - start_time))
 
-    def generate_signature(self, type='', num_concept=3, num_role=3, num_signature=2):
+    def generate_signature(self, type='', num_concept=100, num_role=10, num_signature=100):
         concept_list_test = [num_concept] * num_signature  # generate num_signature signatures
         relation_list_test = [num_role]
         path_signature = self.path + f"sig{type}"
@@ -191,10 +283,19 @@ class dominant_ini(trace_inference):
         mkdir(path_signature_single_minimal_moduel)
 
         i = 0
-        print(len(self.ontology.concepts), len(self.ontology.relations))
+        if self.verbose:
+            self.logger.info(f'Concepts: {len(self.ontology.concepts)}, Relations: {len(self.ontology.relations)}')
 
         concept_list = [c for c in self.ontology.concepts if c[:3] != 'owl']
-        relation_list = [r for r in self.ontology.relations if r[:3] != 'owl']
+        
+        selected_roles_path = os.path.join(self.path, 'selected_roles.txt')
+        if os.path.exists(selected_roles_path):
+            with open(selected_roles_path, 'r') as f:
+                relation_list = [line.strip() for line in f if line.strip()]
+            if self.verbose:
+                self.logger.info(f'Loaded {len(relation_list)} selected roles from {selected_roles_path}')
+        else:
+            relation_list = [r for r in self.ontology.relations if r[:3] != 'owl']
 
         for (li, lj) in product(relation_list_test, concept_list_test):
             sig_r = random.sample(relation_list, li)
@@ -320,7 +421,8 @@ class dominant_ini(trace_inference):
             data = f.readlines()
             self.sig_c = frozenset(data[0][:-1].split(' '))
             self.sig_r = frozenset(data[1][:-1].split(' '))
-            print(f'#########signature loaded!, num_concept:{len(self.sig_c)}, num_role:{len(self.sig_r)}')
+            if self.verbose:
+                self.logger.info(f'#########signature loaded!, num_concept:{len(self.sig_c)}, num_role:{len(self.sig_r)}')
         
         # in the EL+ case, extend the sig_r to include following roles of the form
         # 1. -r1-r2...-rn+t, where ri and t are in sig_r, and [r1, r2, ..., rn, t] is a reduced_chain finded when computing the path for EL+ case
@@ -331,13 +433,15 @@ class dominant_ini(trace_inference):
             for ind_path, _ in self.el_plus_path_data.items():
                 attr_key = ind_path.split(' ')[1]
                 roles_in_attr_key = attr_key.replace('+', '-').split('-')[1:] # ignore the first empty item ""
-                print(attr_key, roles_in_attr_key, self.sig_r)
+                if self.verbose:
+                    self.logger.debug(f'{attr_key}, {roles_in_attr_key}, {self.sig_r}')
                 if roles_in_attr_key and set(roles_in_attr_key).issubset(self.sig_r):
                     extended_roles.add(attr_key)
             # Extend sig_r with the new roles
             self.sig_r = frozenset(self.sig_r | extended_roles)
         
-        print(f'#########signature_r extended:{self.sig_r}')
+        if self.verbose:
+            self.logger.info(f'#########signature_r extended:{self.sig_r}')
 
         self.H.sig_c = self.sig_c
         self.H.sig_r = self.sig_r
@@ -350,7 +454,7 @@ class dominant_ini(trace_inference):
 
         if start:
             path = self.path + 'data_preprocess/subsumption_direct_terminology.owl'
-            print("=======calculate direct subsumption of terminology====")
+            # print("=======calculate direct subsumption of terminology====")
             # os.system(f'java -jar pakages/elk-tools/elk-standalone.jar -i pakages/elk-tools/{self.name_ontology}_terminology.owl -c -o {path}')
 
             with open(path, 'r') as f:
@@ -374,7 +478,8 @@ class dominant_ini(trace_inference):
 
         self.H.subsumptions = self.subsumptions
         self.G.subsumptions = self.subsumptions
-        print(time.time() - s_t)
+        if self.verbose:
+            self.logger.info(f'Subsumption computation time: {time.time() - s_t}')
 
     def extract_sub_graphs(self):
         self.G.clear()
@@ -383,36 +488,42 @@ class dominant_ini(trace_inference):
         _, Pe_H = self.H.traverse_forward(self.sig_c)
         # valid_edges_H = self.H.filter_hyper_edges(Pe_H)
         valid_edges_H = Pe_H
-        print(len(Pe_H), len(valid_edges_H))
-        print("nn:", len(self.H.nn))
+        if self.verbose:
+            self.logger.info(f'Pe_H: {len(Pe_H)}, valid_edges_H: {len(valid_edges_H)}')
+            self.logger.info(f"nn: {len(self.H.nn)}")
         if len(valid_edges_H) < 0:
             s_t_local = time.time()
             H_ids, G_ids = self.ont_H.traverse(self.sig_c | self.sig_r)
-            print("*****local module", len(H_ids), len(G_ids))
-            print("*****time local:", time.time() - s_t_local)
+            if self.verbose:
+                self.logger.info(f"*****local module H_ids: {len(H_ids)}, G_ids: {len(G_ids)}")
+                self.logger.info(f"*****time local: {time.time() - s_t_local}")
             valid_edges_H &= H_ids
 
-        print("===============G.get_hyperedge_id_set()================")
-        for id in self.G.get_hyperedge_id_set():
-            print(id, self.G.get_hyperedge_attributes(id))
+        if self.verbose:
+            self.logger.debug("===============G.get_hyperedge_id_set()================")
+            for id in self.G.get_hyperedge_id_set():
+                self.logger.debug(f'{id}, {self.G.get_hyperedge_attributes(id)}')
         valid_nodes = self.G.traverse_forward(self.H.node_start | self.sig_c)
-        print(valid_nodes, len(self.G.subgraph_sig.get_hyperedge_id_set()))
-        print("===============G.subgraph_sig================")
-        for id in self.G.subgraph_sig.get_hyperedge_id_set():
-            print(id, self.G.subgraph_sig.get_hyperedge_attributes(id))
+        if self.verbose:
+            self.logger.info(f'valid_nodes: {valid_nodes}, G.subgraph_sig edges: {len(self.G.subgraph_sig.get_hyperedge_id_set())}')
+            self.logger.debug("===============G.subgraph_sig================")
+            for id in self.G.subgraph_sig.get_hyperedge_id_set():
+                self.logger.debug(f'{id}, {self.G.subgraph_sig.get_hyperedge_attributes(id)}')
 
         for n in valid_nodes & self.H.node_start:
             if n in self.concept_appear_count and self.concept_appear_count[n] > 1 and n not in self.sig_c:
                 self.middle_nodes.add(n)
 
-        print("middle_nodes:", self.middle_nodes)
-        print("H start, G start:", len(self.H.node_start), len(self.G.node_start))
+        if self.verbose:
+            self.logger.info(f"middle_nodes: {self.middle_nodes}")
+            self.logger.info(f"H start: {len(self.H.node_start)}, G start: {len(self.G.node_start)}")
         self.H.traverse_backward(self.middle_nodes | self.sig_c, valid_edges_H)
         # self.H.traverse_backward(self.sig_c, valid_edges_H)
-        print("after(H):", len(self.H.subgraph_sig.get_hyperedge_id_set()))
-        print("===========H subgraph_sig===========")
-        for id in self.H.subgraph_sig.get_hyperedge_id_set():
-            print(id, self.H.subgraph_sig.get_hyperedge_attributes(id))
+        if self.verbose:
+            self.logger.info(f"after(H): {len(self.H.subgraph_sig.get_hyperedge_id_set())}")
+            self.logger.debug("===========H subgraph_sig===========")
+            for id in self.H.subgraph_sig.get_hyperedge_id_set():
+                self.logger.debug(f'{id}, {self.H.subgraph_sig.get_hyperedge_attributes(id)}')
 
     def initialize_el_plus(self, max_chain_length=None):
         """
@@ -424,6 +535,9 @@ class dominant_ini(trace_inference):
         3. Extends self.G with paths: {first_node} -> {last_node} with chain attributes
         4. Extends self.H with aggregated paths
         
+        If initialize_mode is True: computes and saves EL+ data to data_el_plus folder
+        If initialize_mode is False: loads EL+ data from data_el_plus folder
+        
         Parameters
         ----------
         max_chain_length : int
@@ -434,14 +548,21 @@ class dominant_ini(trace_inference):
         RoleChainLoopError
             If the role axioms contain cycles (loops).
         """
-        print("=== Initializing EL+ extension ===")
+        if self.verbose:
+            self.logger.info("=== Initializing EL+ extension ===")
         
-        print("***************axioms*************************")
-        pprint(self.ontology.axioms)
-        print("*******************RI*************")
-        pprint(self.ontology.axioms_RI) 
-        print("*******************RC*************")
-        pprint(self.ontology.axioms_RC)  
+        # Define path for EL+ data
+        el_plus_data_dir = os.path.join(self.path, 'data_el_plus')
+        el_plus_data_path = os.path.join(el_plus_data_dir, 'el_plus_results.pickle')
+        
+        # Initialize mode: compute and save EL+ data
+        if self.verbose:
+            self.logger.debug("***************axioms*************************")
+            pprint(self.ontology.axioms)
+            self.logger.debug("*******************RI*************")
+            pprint(self.ontology.axioms_RI) 
+            self.logger.debug("*******************RC*************")
+            pprint(self.ontology.axioms_RC)  
         
         # Build role axiom dictionaries from self.ontology.axioms_RI and axioms_RC
         # These dictionaries map tuples to axiom strings for use in extract_EL_Plus_edges
@@ -479,53 +600,86 @@ class dominant_ini(trace_inference):
                     self.role_chain_axioms[(t, r, s)] = axiom_str
                     self.role_tuple_to_str[(r, s, t)] = axiom_str
         
-        print(f"Built {len(self.role_inclusion_axioms)} role inclusion axioms and {len(self.role_chain_axioms)} role chain axioms from ontology")
+        if self.verbose:
+            self.logger.info(f"Built {len(self.role_inclusion_axioms)} role inclusion axioms and {len(self.role_chain_axioms)} role chain axioms from ontology")
         
         # Initialize path index counter and storage for CNF generation
         self.el_plus_path_index = 0  # Counter for unique path IDs
         self.el_plus_path_data = {}  # {ind_path: {axioms: set, subsumptions: set, role_axiom_ids: set}}
-        
-        # Extract EL+ edges and role chains
-        # Loop detection runs automatically and raises RoleChainLoopError if loop found
-        try:
+
+              
+        if not self.initialize_mode:
+            # Load mode: load precomputed EL+ data
+            assert os.path.exists(el_plus_data_path)
+            with open(el_plus_data_path, 'rb') as f:
+                el_plus_data = pickle.load(f)
+            self.el_plus_chains = el_plus_data['el_plus_chains']
+            self.el_plus_paths_G = el_plus_data['el_plus_paths_G']
+            self.el_plus_paths_H = el_plus_data['el_plus_paths_H']
+        else:
+            # Extract EL+ edges and role chains
+            # Loop detection runs automatically and raises RoleChainLoopError if loop found
             result = extract_EL_Plus_edges_func(
-                role_inclusion_axioms=self.role_inclusion_axioms,
-                role_chain_axioms=self.role_chain_axioms,
-                G=self.G,
-                H=self.H,
-                ont_H=self.ont_H,
-                subsumptions=self.subsumptions,
-                max_length=max_chain_length,
+                    role_inclusion_axioms=self.role_inclusion_axioms,
+                    role_chain_axioms=self.role_chain_axioms,
+                    G=self.G,
+                    H=self.H,
+                    ont_H=self.ont_H,
+                    subsumptions=self.subsumptions,
+                    max_length=max_chain_length,
             )
-        except RoleChainLoopError as e:
-            raise RoleChainLoopError(
-                f"Cannot process EL+ ontology: {e}"
-            )
+
+            
+            # Store results
+            self.el_plus_chains = result['all_chains']
+            self.el_plus_paths_G = result['paths_G']
+            self.el_plus_paths_H = result['paths_H']
+    
         
-        # Store results
-        self.el_plus_chains = result['all_chains']
-        self.el_plus_paths_G = result['paths_G']
-        self.el_plus_paths_H = result['paths_H']
+        # Record statistics for initialization
+        self.num_chains_init = len(self.el_plus_chains)
+        self.num_paths_G_init = len(self.el_plus_paths_G)
+        self.num_paths_H_init = len(self.el_plus_paths_H)
         
+        if self.verbose:
+            self.logger.debug("+++++++++++++el_plus_chains:++++++++++++++++ ")
+            pprint(self.el_plus_chains)
+            self.logger.debug("+++++++++++++el_plus_paths_G:++++++++++++++++ ")
+            pprint(self.el_plus_paths_G)
+            self.logger.debug("+++++++++++++el_plus_paths_H:++++++++++++++++ ")
+            pprint(self.el_plus_paths_H)
+            
+            self.logger.info(f"Found {len(result['all_chains'])} chains")
+            self.logger.info(f"Computed {len(self.el_plus_paths_G)} paths in G, {len(self.el_plus_paths_H)} aggregated paths with H")
         
-        print("+++++++++++++el_plus_chains:++++++++++++++++ ")
-        pprint(self.el_plus_chains)
-        print("+++++++++++++el_plus_paths_G:++++++++++++++++ ")
-        pprint(self.el_plus_paths_G)
-        print("+++++++++++++el_plus_paths_H:++++++++++++++++ ")
-        pprint(self.el_plus_paths_H)
+        # Save EL+ data in initialize mode
+        if not os.path.exists(el_plus_data_dir):
+            os.makedirs(el_plus_data_dir)
         
-        print(f"Found {len(result['all_chains'])} chains")
-        print(f"Computed {len(self.el_plus_paths_G)} paths in G, {len(self.el_plus_paths_H)} aggregated paths with H")
+        el_plus_data = {
+            'el_plus_chains': self.el_plus_chains,
+            'el_plus_paths_G': self.el_plus_paths_G,
+            'el_plus_paths_H': self.el_plus_paths_H
+        }
+        with open(el_plus_data_path, 'wb') as f:
+            pickle.dump(el_plus_data, f)
+        
+        if self.verbose:
+            self.logger.info(f'EL+ data saved to {el_plus_data_path}')
         
         # Extend G with paths
-        self._extend_G_with_paths(self.el_plus_paths_G)
+        num_paths_G_added = self._extend_G_with_paths(self.el_plus_paths_G)
         
         # Extend H with aggregated paths
-        self._extend_H_with_paths(self.el_plus_paths_H)
+        num_paths_H_added = self._extend_H_with_paths(self.el_plus_paths_H)
         
-        print(f"Created {len(self.el_plus_path_data)} indexed paths for CNF generation")
-        print("=== EL+ initialization complete ===")
+        # Store the counts
+        self.num_paths_G_added = num_paths_G_added
+        self.num_paths_H_added = num_paths_H_added
+        
+        if self.verbose:
+            self.logger.info(f"Created {len(self.el_plus_path_data)} indexed paths for CNF generation")
+            self.logger.info("=== EL+ initialization complete ===")
         return 
 
     def _extend_G_with_paths(self, paths):
@@ -605,10 +759,14 @@ class dominant_ini(trace_inference):
             
             # Add edge to G's subgraph_sig with the new attribute format
             self.G.add_hyperedge({first_node}, {last_node}, {attr_key: ind_path})
-            print(f"==================add edge {first_node} -> {last_node} with attribute {attr_key}: {ind_path} to G")
+            if self.verbose:
+                self.logger.debug(f"==================add edge {first_node} -> {last_node} with attribute {attr_key}: {ind_path} to G")
             extended_count += 1
         
-        print(f"Extended G with {extended_count} EL+ path edges")
+        if self.verbose:
+            self.logger.info(f"Extended G with {extended_count} EL+ path edges")
+        
+        return extended_count
 
     def _extend_H_with_paths(self, paths):
         """
@@ -703,9 +861,13 @@ class dominant_ini(trace_inference):
             # Add edge to H's subgraph_sig with the new attribute format
             self.H.add_hyperedge({first_node}, {last_node}, {attr_key: ind_path})
             extended_count += 1
-            print(f"==================add edge {first_node} -> {last_node} with attribute '{attr_key}': {ind_path} to H")
+            if self.verbose:
+                self.logger.debug(f"==================add edge {first_node} -> {last_node} with attribute '{attr_key}': {ind_path} to H")
         
-        print(f"Extended H with {extended_count} EL+ path edges")
+        if self.verbose:
+            self.logger.info(f"Extended H with {extended_count} EL+ path edges")
+        
+        return extended_count
 
     def extract_EL_Plus_edges(self):
         """
@@ -819,7 +981,7 @@ class dominant_ini(trace_inference):
                                     if place_holder:
                                         print("place_holder:", place_holder)
                                         if n in self.sig_c:
-                                            new_Con = f"N{n}_{r}_{n_next}" 
+                                            new_Con = f"N{n}_{r}_{n_next_str}" 
                                             owl_str += trans_back(f'(equivalent <{new_Con}> {place_holder.replace("X", f"<{n}>")})\n')
                                             owl_str += trans_back(f'(implies <{new_Con}> <{D_defined[D]}>)\n')
                                             self.owl2ind[f'{new_Con} {D_defined[D]}'].append(str(self.a_ind))
@@ -829,7 +991,7 @@ class dominant_ini(trace_inference):
                                             # assert n in m2C
                                             if n in m2C:
                                                 for N_C in m2C[n]:
-                                                    new_Con = f"N{N_C}_{r}_{n_next}"
+                                                    new_Con = f"N{N_C}_{r}_{n_next_str}"
                                                     owl_str += trans_back(f'(equivalent <{new_Con}> {place_holder.replace("X", f"<{N_C}>")})\n')
                                                     owl_str += trans_back(f'(implies <{new_Con}> <{D_defined[D]}>)\n')
                                                     self.owl2ind[f'{new_Con} {D_defined[D]}'].append(str(self.a_ind))
@@ -850,98 +1012,6 @@ class dominant_ini(trace_inference):
                                             self.owl2ind[f'{N_C} {D_defined[D]}'].append(str(self.a_ind))
                                             ind2CD[str(self.a_ind)] = (n, N_C.split("_")[1], (r, n_next))
                                             self.a_ind += 1
-
-        # # add an EL+-case
-        # # if there is a path from {B}->{A} with reduced_chain [r1, r2, ...rn, t] with A a key in self.G.cluster.A2L and B in self.middle_nodes | self.sig_c:
-        # # Create the following two axioms for D in self.G.cluster.transfer2C(A, r_res=r, k_res=n_next):
-        # #  (equivalence <K> D)
-        # #  (equivalence <K1> (some <r1>(some <r2>(... (some <rn> <head>)...))))
-        # #  (implies <K1>  <K>)   
-        # # and set self.owl2ind["K1 K"] = str(self.a_ind). 
-        # # note that you should also call the cnf_encode function to encode the path here.
-        # K_defined = {}
-        # if self.el_plus_mode and hasattr(self, 'el_plus_path_data'):
-        #     for ind_path, path_data_list in self.el_plus_path_data.items():
-        #         for path_data in path_data_list:
-        #             if path_data.get('type') != 'G':
-        #                 continue  # Only process G paths here
-                    
-        #             first_node = path_data.get('first')  # B
-        #             last_node = path_data.get('last')    # A
-        #             reduced_chain = path_data.get('chain', [])
-                    
-        #             # Check if B is in middle_nodes | sig_c and A is in G.cluster.A2L
-        #             if first_node not in (self.middle_nodes | self.sig_c):
-        #                 continue
-        #             if last_node not in self.G.cluster.A2L:
-        #                 continue
-                    
-        #             # Extract chain role names from ind_path (already in name format)
-        #             # ind_path format: "{first_node} {attr_key} {last_node}"
-        #             # attr_key format: "-r1...-rn+t" for G paths
-        #             parts = ind_path.split(' ')
-        #             attr_key = parts[1]  # -r1-r2-...-rn+t
-                    
-        #             # Parse attr_key to get chain roles and target role
-        #             # Format: -r1-r2-...-rn+t (chain roles before +, target after +)
-        #             if '+' not in attr_key:
-        #                 continue
-        #             chain_part, _ = attr_key.rsplit('+', 1)
-        #             chain_role_names = chain_part.split('-')[1:]  # Split and filter empty
-        #             if not chain_role_names:
-        #                 continue
-                    
-        #             # For all r in dic_A, build a big D as the conjunction of all D in dic_A[r] for all r
-        #             dic_A = self.G.cluster.A2L.get(last_node, {})
-                    
-        #             # Collect all D concepts and D_tuples for all roles in dic_A
-        #             all_D_concepts = []
-        #             D_tuples = []
-        #             for r in dic_A:
-        #                 for n_next in dic_A[r]:
-        #                     if r!="":
-        #                         D_tuples.append((r, n_next))
-
-        #                     for D in self.G.cluster.transfer2C(last_node, r_res=r, k_res=n_next):
-        #                         if len(re.split('<|:', D)) <= 2:
-        #                             continue
-        #                         # Apply EL+ preprocessing to D
-        #                         D = replace_el_plus_role_pattern(D)
-        #                         all_D_concepts.append(D)
-                    
-        #             if not all_D_concepts:
-        #                 continue
-                    
-        #             # Build big D as conjunction of all D concepts
-        #             if len(all_D_concepts) == 1:
-        #                 big_D = all_D_concepts[0]
-        #             else:
-        #                 big_D = '(and ' + ' '.join(all_D_concepts) + ')'
-                    
-        #             # Create K for big D if not already defined
-        #             if big_D not in K_defined:
-        #                 K_name = f'K_{last_node}'
-        #                 owl_str += trans_back(f'(equivalent <{K_name}> {big_D})\n')
-        #                 K_defined[big_D] = K_name
-                    
-        #             # Create K1 for (some <r1> (some <r2> (... (some <rn> <first_node>)...)))
-        #             # Build nested some expression from inside out
-        #             nested_expr = f'<{first_node}>'
-        #             for role_name in reversed(chain_role_names):
-        #                 nested_expr = f'(some <{role_name}> {nested_expr})'
-                    
-        #             K1_name = f'K1_{first_node}_{"_".join(chain_role_names) if chain_role_names else "empty"}'
-        #             if nested_expr not in K_defined:
-        #                 owl_str += trans_back(f'(equivalent <{K1_name}> {nested_expr})\n')
-        #                 K_defined[nested_expr] = K1_name
-        #             else:
-        #                 K1_name = K_defined[nested_expr]
-                    
-        #             # Create (implies <K1> <K>)
-        #             owl_str += trans_back(f'(implies <{K1_name}> <{K_defined[big_D]}>)\n')
-        #             self.owl2ind[f'{K1_name} {K_defined[big_D]}'].append(str(self.a_ind))
-        #             ind2CD[str(self.a_ind)] = (first_node, None, (ind_path, last_node, D_tuples))
-        #             self.a_ind += 1
 
         print("==============ind2CD===========")
         pprint(owl_str)
@@ -1069,6 +1139,10 @@ class dominant_ini(trace_inference):
 
         # !!! make sure the index is unified
         self.count_id = self.a_ind
+
+        print("==============clauses 0===========")
+        pprint(self.clauses)
+        print("===============================")
 
         # encode the derivation relations among all C->D
         for h_id in dic_dominant.get_hyperedge_id_set():
@@ -1409,36 +1483,39 @@ class dominant_ini(trace_inference):
         
         return path_clause_id, subsumption_pairs
 
-    def build_cnf_el_plus(self):
-        """
-        Build CNF formulas for all EL+ paths.
+    # def build_cnf_el_plus(self):
+    #     """
+    #     Build CNF formulas for all EL+ paths.
         
-        DEPRECATED: This method is kept for backward compatibility.
-        EL+ path CNF is now built incrementally in build_cnf_t and build_cnf_h
-        when meeting extended paths.
+    #     DEPRECATED: This method is kept for backward compatibility.
+    #     EL+ path CNF is now built incrementally in build_cnf_t and build_cnf_h
+    #     when meeting extended paths.
         
-        Returns
-        -------
-        set
-            Set of subsumption pairs (A, B) from all paths.
-        """
-        if not hasattr(self, 'el_plus_path_data') or not self.el_plus_path_data:
-            return set()
+    #     Returns
+    #     -------
+    #     set
+    #         Set of subsumption pairs (A, B) from all paths.
+    #     """
+    #     if not hasattr(self, 'el_plus_path_data') or not self.el_plus_path_data:
+    #         return set()
         
-        subsumption_pairs = set()
-        total_paths = 0
+    #     subsumption_pairs = set()
+    #     total_paths = 0
         
-        for ind_path in self.el_plus_path_data:
-            _, subs = self.build_cnf_el_plus_one(ind_path)
-            subsumption_pairs.update(subs)
-            total_paths += len(self.el_plus_path_data[ind_path])
+    #     for ind_path in self.el_plus_path_data:
+    #         _, subs = self.build_cnf_el_plus_one(ind_path)
+    #         subsumption_pairs.update(subs)
+    #         total_paths += len(self.el_plus_path_data[ind_path])
         
-        print(f'Built CNF for {len(self.el_plus_path_data)} EL+ path indices ({total_paths} total paths)')
-        return subsumption_pairs
+    #     print(f'Built CNF for {len(self.el_plus_path_data)} EL+ path indices ({total_paths} total paths)')
+    #     return subsumption_pairs
 
-    def build_cnf_role_chains(self):
+    def build_cnf_role_chains(self, flag_encode=False):
         """
         Build CNF formulas for role chains based on sig_r.
+
+        The flag_encode is set False for the first time, for computing role chain axioms only, do not add cnf clauses.
+        The flag_encode is set True for the second time, for adding cnf clauses.
         
         1. Extract non-looped role chains containing only roles in sig_r
         2. Group chains by chain tuple and collect all axiom sets
@@ -1560,19 +1637,20 @@ class dominant_ini(trace_inference):
         # Create one clause for each axiom set
       
         for chain_tuple, ax_set in minimal_entries:
-            # Create unique key for this role chain + axiom set combination
-            role_chain_id = str(self.setid_rules2id(chain_tuple))
-            
-            # Build premise set from role axiom IDs
-            premise_ids = set()
-            for role_axiom_id in ax_set:
-                role_axiom_clause_id = self.setid_rules2id(role_axiom_id)
-                premise_ids.add(role_axiom_clause_id)
-                # Add role axiom clause IDs to answer_literals
-                self.answer_literals.add(role_axiom_clause_id)
-            
-            # Add clause: role_chain_id <- {role_axiom_ids}
-            self.clauses[role_chain_id] = premise_ids
+            if flag_encode:
+                # Create unique key for this role chain + axiom set combination
+                role_chain_id = str(self.setid_rules2id(chain_tuple))
+                
+                # Build premise set from role axiom IDs
+                premise_ids = set()
+                for role_axiom_id in ax_set:
+                    role_axiom_clause_id = self.setid_rules2id(role_axiom_id)
+                    premise_ids.add(role_axiom_clause_id)
+                    # Add role axiom clause IDs to answer_literals
+                    self.answer_literals.add(role_axiom_clause_id)
+                
+                # Add clause: role_chain_id <- {role_axiom_ids}
+                self.clauses[role_chain_id] = [premise_ids]
             self.infered_role_chains.add(chain_tuple)
     
         print(f'Built CNF for {len(minimal_entries)} minimal role chain axiom sets (from {len(chain_axiom_sets)} total)')
@@ -1584,8 +1662,8 @@ class dominant_ini(trace_inference):
         pprint(self.answer_literals)    
         
         # Build CNF for EL+ paths if in EL+ mode
-        # if self.el_plus_mode:
-        #     subsumption_paris.update(self.build_cnf_role_chains())
+        if self.el_plus_mode:
+            self.build_cnf_role_chains(True)
         
         print('num of subsumption pairs: ', len(subsumption_paris))
 
@@ -1670,7 +1748,9 @@ class dominant_ini(trace_inference):
         self.check_dic = {}
         self.check_history = []
         self.flag_loop = False
-        self.check(self.clauses, self.answer_literals, '1')
+        if not self.check(self.clauses, self.answer_literals, '1'):
+            #raise ValueError("CNF formula is incorrect")
+            pass
 
         # write cnf formula in file
         self.write_cnf(k)
@@ -1747,6 +1827,10 @@ class dominant_ini(trace_inference):
             f_q.write(str('1') + '\n')
 
         print("______________Complete Module_____________")
+        
+        # Track role axioms count for EL+ mode
+        self.num_role_axioms_in_module = 0
+        
         with open(f'{query_file}/approximate_module.txt', 'w') as f_o:
             # f_o.write(f"Prefix(owl:=<http://www.w3.org/2002/07/owl#>)\n\nOntology(\n")
             if self.el_plus_mode:
@@ -1759,6 +1843,10 @@ class dominant_ini(trace_inference):
                     line = str(self.rules2id[ind_a]) + ": "+ trans_back(axiom) 
                     f_o.write(line+ "\n")
                     print(line)
+                    
+                    # Count role axioms (RI or RC)
+                    if self.el_plus_mode and (axiom in self.ontology.axioms_RI or axiom in self.ontology.axioms_RC):
+                        self.num_role_axioms_in_module += 1
             
             # f_o.write(')\n')
         print("___________________________________________")
@@ -1794,54 +1882,96 @@ class dominant_ini(trace_inference):
 
     @func_set_timeout(60)
     def main(self, k, type=''):
+        # Track memory before processing signature
+        process = psutil.Process()
+        mem_before_sig = process.memory_info().rss / 1024 / 1024  # MB
+        
+        # Start peak memory monitoring
+        mem_monitor = MemoryMonitor(interval=0.01)  # Sample every 10ms
+        mem_monitor.start()
+        
         self.clear()
 
         self.load_signature(k, type)
-        s_t = time.time()
+        s_t = time.perf_counter()  # More accurate than time.time()
 
         # extract cluster
         self.extract_sub_graphs()
-        print("time extract sub hyper-graph:", time.time() - s_t)
+        if self.verbose:
+            self.logger.info(f"time extract sub hyper-graph: {time.perf_counter() - s_t}")
 
         # extract hyper-paths
-        print("middle_nodes (before enumerate hyper-path on H):", self.middle_nodes)
+        if self.verbose:
+            self.logger.info(f"middle_nodes (before enumerate hyper-path on H): {self.middle_nodes}")
         self.H.enumerate_hyper_paths(self.sig_c | self.middle_nodes)
         # self.H.enumerate_hyper_paths(self.sig_c, False)
         self.record_subH()
 
         # extract cluster
-        print("middle_nodes:", self.middle_nodes)
+        if self.verbose:
+            self.logger.info(f"middle_nodes: {self.middle_nodes}")
         self.G.build_cluster(self.sig_c | self.middle_nodes)
-        print('size clauses:', len(self.G.cluster.A2L))
+        if self.verbose:
+            self.logger.info(f'size clauses: {len(self.G.cluster.A2L)}')
 
         # Build CNF for role chains in EL+ mode
         if self.el_plus_mode:
             self.build_cnf_role_chains()
+            # Record number of inferred chains for this signature
+            self.num_infered_chains_per_signature[k] = len(self.infered_role_chains)
             
-        print("time extract hyper-path and cluster:", time.time() - s_t)
-        time_clusterandhyper_path = time.time() - s_t
+        if self.verbose:
+            self.logger.info(f"time extract hyper-path and cluster: {time.perf_counter() - s_t}")
+        time_clusterandhyper_path = time.perf_counter() - s_t
 
         # delete redundant part
-        s_t_1 = time.time()
+        s_t_1 = time.perf_counter()
         self.filter_redundancy_and_equivalence()
-        print("time filter redundancy:", time.time() - s_t)
+        if self.verbose:
+            self.logger.info(f"time filter redundancy: {time.perf_counter() - s_t}")
 
         self.build_cnf(k)
-        time_cnf = time.time() - s_t_1
-        print("time all:", time.time() - s_t)
+        time_cnf = time.perf_counter() - s_t_1
+        if self.verbose:
+            self.logger.info(f"time all: {time.perf_counter() - s_t}")
 
-        print("clauses, answer_literals: ", len(self.clauses), len(self.answer_literals))
+        if self.verbose:
+            self.logger.info(f"clauses, answer_literals: {len(self.clauses)}, {len(self.answer_literals)}")
+        
+        # Stop peak memory monitoring and get results
+        peak_memory_sig = mem_monitor.stop()
+        
+        # Track memory after processing signature
+        mem_after_sig = process.memory_info().rss / 1024 / 1024  # MB
+        mem_increase_sig = mem_after_sig - mem_before_sig
+        
+        # Store both increase and peak memory
+        self.memory_per_signature[k] = {
+            'increase': mem_increase_sig,
+            'peak': peak_memory_sig,
+            'final': mem_after_sig
+        }
+        
+        if self.verbose:
+            self.logger.info(f"Memory for signature {k}: final={mem_after_sig:.2f} MB, increase={mem_increase_sig:.2f} MB, peak={peak_memory_sig:.2f} MB")
+        
         return time_clusterandhyper_path, time_cnf
 
 
-def test(path, name_ontology, count_c=None, k_E_role=None, type='', el_plus_mode=False):
-    m = dominant_ini(name_ontology, path, count_c=count_c, k_E_role=k_E_role, el_plus_mode=el_plus_mode)
+def test(path, name_ontology, initialize=False, type='', el_plus_mode=False, verbose=True):
+    m = dominant_ini(name_ontology, path, initialize=initialize, el_plus_mode=el_plus_mode, verbose=verbose)
     m.initialize()
 
     if not os.path.exists(m.sig_path):
         m.generate_signature()
     else:
-        print(f"signature already exists in {m.sig_path}")
+        if verbose:
+            m.logger.info(f"signature already exists in {m.sig_path}")
+    
+    if initialize:
+        return None, None, None  
+    
+    # input("Preprocessing data loaded. Press any key to start computing modules for all signatures...")
 
     if not type:
         m.query_path = path + "query_sig"
@@ -1854,10 +1984,26 @@ def test(path, name_ontology, count_c=None, k_E_role=None, type='', el_plus_mode
     s_t = time.time()
     time_out_list = []
     f_record = open(f'{path}/record_time_sig{type}.txt', 'w')
-    f_record.write(
-        'k, time_of_cluster_and_hyper_path, time_of_cnf,time_greedy, answer_literals, greedy_one_module_size, contain_loop, garantee_minimal, loop_h_id, loop_pairs, G_loop_nodes\n')
+    
+    # Write header with memory and statistics information
+    header = 'k, time_of_cluster_and_hyper_path, time_of_cnf, time_greedy, answer_literals, greedy_one_module_size, contain_loop, garantee_minimal, loop_h_id, loop_pairs, G_loop_nodes, memory_init_MB, memory_sig_increase_MB, memory_sig_peak_MB'
+    if el_plus_mode:
+        header += ',num_infered_chains, num_role_axioms_in_module'
+    header += '\n'
+    f_record.write(header)
+    
+    # Write initialization statistics
+    init_stats = f'# Initialization: memory={m.memory_init:.2f} MB'
+    if el_plus_mode:
+        init_stats += f', chains={m.num_chains_init}, paths_G_init={m.num_paths_G_init}, paths_H_init={m.num_paths_H_init}'
+        init_stats += f', paths_G_added={m.num_paths_G_added}, paths_H_added={m.num_paths_H_added}'
+    init_stats += '\n'
+    f_record.write(init_stats)
     for k in test_sample:
-        print('___________signature:', k)
+        # if int(k)!=79: #debug
+        #     continue
+        if verbose:
+            m.logger.info(f'___________signature: {k}')
         try:
             t_ch, t_cnf = m.main(str(k), type)
         except FunctionTimedOut:
@@ -1875,17 +2021,38 @@ def test(path, name_ontology, count_c=None, k_E_role=None, type='', el_plus_mode
         else:
             f_minimal = False
 
-        s_t = time.time()
+        s_t = time.perf_counter()  # More accurate timing
         OneM = greedy_search(m.clauses, m.answer_literals)
         module1 = OneM.search('1')
-        time_greedy = time.time() - s_t
+        time_greedy = time.perf_counter() - s_t
 
         # record time and only preserve 5 digits
-        f_record.write(
-            f'{k}, {round(t_ch, 5)}, {round(t_cnf, 5)}, {time_greedy}, {len(m.answer_literals)}, {len(module1)}, '
-            f'{f_loop}, {f_minimal}, {m.H.subgraph_sig.loop_h_id, m.G.cluster.loops_pairs}, {m.G_loop_nodes}\n')
+        record_line = f'{k}, {round(t_ch, 5)}, {round(t_cnf, 5)}, {time_greedy}, {len(m.answer_literals)}, {len(module1)}, '
+        record_line += f'{f_loop}, {f_minimal}, {m.H.subgraph_sig.loop_h_id, m.G.cluster.loops_pairs}, {m.G_loop_nodes}'
+        
+        # Add memory (always recorded)
+        mem_sig_data = m.memory_per_signature.get(str(k), {'increase': 0, 'peak': 0})
+        if isinstance(mem_sig_data, dict):
+            mem_increase = mem_sig_data.get('increase', 0)
+            mem_peak = mem_sig_data.get('peak', 0)
+        else:
+            # Backward compatibility: if it's a single number, treat as increase
+            mem_increase = mem_sig_data
+            mem_peak = 0
+        record_line += f', {m.memory_init:.2f}, {mem_increase:.2f}, {mem_peak:.2f}'
+        
+        # Add EL+ statistics if in EL+ mode
+        if el_plus_mode:
+            num_infered = m.num_infered_chains_per_signature.get(str(k), 0)
+            num_role_axioms = getattr(m, 'num_role_axioms_in_module', 0)
+            record_line += f', {num_infered}, {num_role_axioms}'
+        
+        record_line += '\n'
+        f_record.write(record_line)
         f_record.flush()
-    print(time_out_list)
+    
+    if verbose:
+        m.logger.info(f'Time out list: {time_out_list}')
     f_record.close()
 
     with open(f'{path}/non_time_out_sig{type}.txt', 'w') as f_o:
@@ -1901,10 +2068,14 @@ if __name__ == "__main__":
     from sys import argv
 
     path = f'workspace/{argv[1]}/'
-    # name_ontology = argv[1]
-    name_ontology = "ontology"
-    count_c, k_E_role = None, None
+    name_ontology = argv[2] if len(argv) > 2 and not argv[2].startswith('--') else argv[1]
+    
+    # Check for --init flag to run initialization
+    initialize = '--init' in argv
     # Check for --el-plus flag in command line arguments
     el_plus_mode = '--el-plus' in argv
-    time_out_list, all_time, m = test(path, name_ontology, count_c, k_E_role, '', el_plus_mode=el_plus_mode)
+    # Check for --quiet flag to disable verbose output
+    verbose = '--quiet' not in argv
+    
+    time_out_list, all_time, m = test(path, name_ontology, initialize=initialize, type='', el_plus_mode=el_plus_mode, verbose=verbose)
     print('all done in', time.time() - s_t)

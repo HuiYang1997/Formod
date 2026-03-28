@@ -24,11 +24,14 @@ class clause():
 
 
 class trace_inference():
-    def __init__(self, path_ontology, name_ontology, count_c, k_E_role):
+    def __init__(self, path_ontology, name_ontology, initialize=False):
         self.name_ontology = name_ontology
         self.path_ontology = path_ontology
         start_time = time.time()
-        if not count_c and not k_E_role:
+        
+        preprocessing_path = os.path.join(self.path_ontology, 'data', 'preprocessing_results.json')
+        
+        if initialize:
             print(
                 '\n\nnormalization ##################################################################################\n\n\n')
             self.num_concepts, l_concepts_part_orginal = normalize(self.path_ontology, self.name_ontology)
@@ -51,10 +54,24 @@ class trace_inference():
             print('\n\n##################################################################################\n')
             print(f'preprocessing step finished in {time.time() - start_time}')
 
+            preprocessing_data = {
+                'num_concepts': self.num_concepts,
+                'k_E_role': self.k_E_role
+            }
+            with open(preprocessing_path, 'w') as f:
+                json.dump(preprocessing_data, f)
+            print(f'Preprocessing results saved to {preprocessing_path}')
+
             print('loading data........')
         else:
-            self.k_E_role = k_E_role
-            self.num_concepts = count_c
+            if os.path.exists(preprocessing_path):
+                with open(preprocessing_path, 'r') as f:
+                    preprocessing_data = json.load(f)
+                self.num_concepts = preprocessing_data['num_concepts']
+                self.k_E_role = preprocessing_data['k_E_role']
+                print(f'Preprocessing results loaded from {preprocessing_path}')
+            else:
+                raise FileNotFoundError(f'Preprocessing results not found at {preprocessing_path}. Please run with initialize=True first.')
 
         print("count_c,self.k_E_role:", self.num_concepts, self.k_E_role)
 
@@ -96,7 +113,7 @@ class trace_inference():
                 self.trs2id[(r, s, t)] = 'c' + str(count_trs2id)
                 self.indE2id_original_axiom['c' + str(count_trs2id)] = 'c' + str(count_trs2id)
                 count_trs2id += 1
-        print('all preprocessing data loaded in {}'.format(time.time() - start_time))
+        print('ontology preprocessing data loaded in {}'.format(time.time() - start_time))
 
         self.current_result, self.initial_result = {}, {}
         self.unfold_pair = set([])
@@ -104,7 +121,7 @@ class trace_inference():
         self.loop_pair = set([])
         self.current_pair_s = set([])
         self.invalid_pairs = set([])
-        self.rules2id, self.count_id = {}, 1
+        self.rules2id, self.count_id = {}, 2
 
         self.r2c_history = {}
         self.seperate_2_history = {}
@@ -627,7 +644,7 @@ class trace_inference():
         self.loop_pair = set([])
         self.current_pair_s = set([])
         self.invalid_pairs = set([])
-        self.rules2id, self.count_id = {}, 1
+        self.rules2id, self.count_id = {}, 2
 
         self.r2c_history = {}
         self.seperate_2_history = {}

@@ -160,6 +160,7 @@ class subH(DirectedHypergraph):
                 concepts_n = [(e, self.get_hyperedge_attribute(e, 'concept')) for e in self.get_backward_star(n)]
                 concepts_n.sort(key=lambda x: len(x[1]))
                 deleted_edges = set()
+                print('concepts_n:', len(concepts_n))
                 for i in range(len(concepts_n)):
                     e_i, c_i = concepts_n[i]
                     for j in range(i):
