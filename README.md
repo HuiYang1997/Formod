@@ -2,59 +2,39 @@
 
 This is a prototype implementation of the algorithm ForMod.
 
-## Step 0: preprocessing
-
-To use this code, place the ontology in the `workspace` directory. For example, assume the ontology is stored at `workspace/<workspace_name>/<ontology_name>.owl`. We require that:
-
-1. `<ontology_name>.owl` is in FSS format, and a copy `<ontology_name>.krss.owl` in KRSS format also exists in the same folder;
-2. the classification result of direct subsumptions is saved under `workspace/<workspace_name>/data_preprocess/`.
-
-This preprocessing can be done as follows. First, install the mOWL package:
-
-``pip install mowl-borg``
-
-Then run:
-
-``python ont_processing.py <ontology_path> [do_transform]``
-
-where `do_transform = True/False`. If `do_transform == True`, all ABox axioms are translated to TBox axioms as follows (the translation is saved in `ontology_mappings.pkl`):
-- `A(a)` to `A_a ⊑ A`
-- `r(a,b)` to `A_a ⊑ ∃r. A_b`
-
-
 ## Step 1: generate the Horn clauses
 
 We assume all signatures have been provided as follows:
 
-1. all signatures are in the directory `workspace/<workspace_name>/sig/`, with names `0, 1, 2, ...`;
+1. all signatures are in the directory `workspace/<name>/sig/`, with names `0, 1, 2, ...`;
 2. each signature file consists of two lines: (i) `"A B C ... D\n"` (concept names); (ii) `"r1 r2 ... rn\n"` (role names).
 
 Then obtain the clause set for each signature by running:
 
-``python ForMod.py <workspace_name> [ontology_name]``
+``python ForMod.py <name> [--init] [--el-plus]``
 
-- `<workspace_name>`: the subdirectory under `workspace/` containing the ontology and signatures (e.g. `test`).
-- `[ontology_name]` *(optional)*: the base name of the ontology file without extension (e.g. `ontology`). Defaults to `<workspace_name>` if omitted.
+where `<name>` is the subdirectory under `workspace/` (also used as the ontology base name).
+
+> **Note:** `--init` is **required on the first run**. It builds the hypergraph representation from the ontology. On subsequent runs it can be omitted to reuse the cached hypergraph.
+
+**Optional flags:**
+- `--init`: build (or rebuild) the hypergraph from scratch.
+- `--el-plus`: enable EL⁺ mode (supports role chains and other EL⁺ constructs).
 
 **Examples:**
 
 ```bash
-# ontology at workspace/test/test.owl, signatures at workspace/test/sig/
+# First run — --init is required
+python ForMod.py test --init
+
+# Subsequent runs
 python ForMod.py test
 
-# ontology at workspace/myexp/ontology.owl, signatures at workspace/myexp/sig/
-python ForMod.py myexp ontology
-
-# with optional flags
-python ForMod.py myexp ontology --init --el-plus --quiet
+# EL+ ontology, first run
+python ForMod.py test --init --el-plus
 ```
 
-**Optional flags:**
-- `--init`: re-run initialisation (build the hypergraph from scratch).
-- `--el-plus`: enable EL⁺ mode (supports role chains and other EL⁺ constructs).
-- `--quiet`: suppress verbose output.
-
-The result is saved in `workspace/<workspace_name>/query_sig/`.
+The result is saved in `workspace/<name>/query_sig/`.
 
 Note: the algorithm produces the clause set $\mathcal{C}_\Sigma$. To obtain pseudo-minimal modules, use the resolution algorithm in the next step.
 

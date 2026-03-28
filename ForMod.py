@@ -2068,14 +2068,10 @@ if __name__ == "__main__":
     from sys import argv
 
     path = f'workspace/{argv[1]}/'
-    name_ontology = argv[2] if len(argv) > 2 and not argv[2].startswith('--') else argv[1]
-    
-    # Check for --init flag to run initialization
+    name_ontology = argv[1]
     initialize = '--init' in argv
-    # Check for --el-plus flag in command line arguments
     el_plus_mode = '--el-plus' in argv
-    # Check for --quiet flag to disable verbose output
-    verbose = '--quiet' not in argv
+    verbose = False
     
     time_out_list, all_time, m = test(path, name_ontology, initialize=initialize, type='', el_plus_mode=el_plus_mode, verbose=verbose)
     print('all done in', time.time() - s_t)
